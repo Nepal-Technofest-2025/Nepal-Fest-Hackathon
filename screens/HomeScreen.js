@@ -70,6 +70,32 @@ const StatCard = ({ icon, label, value, color, textColor, isDarkMode, styles }) 
   </Card>
 );
 
+// SwitchCard Component
+const SwitchCard = ({ label, value, onValueChange, color, textColor, isDarkMode, styles }) => (
+  <Card style={[styles.statCard, { backgroundColor: color }]}>
+    <View style={styles.statRow}>
+      <Text style={[styles.statLabel, { color: textColor }]}>{label}</Text>
+      <Switch
+        value={value}
+        onValueChange={onValueChange}
+        trackColor={{
+          false: isDarkMode ? "#767577" : "#b3b3b3", // Slightly darker gray in light mode (off status)
+          true: isDarkMode ? "#81b0ff" : "#4CAF50", // On status remains the same
+        }}
+        thumbColor={
+          value
+            ? isDarkMode
+              ? "#f5dd4b" // Yellow in dark mode (on status)
+              : "#f4f3f4" // Light gray in light mode (on status)
+            : isDarkMode
+            ? "#f4f3f4" // Light gray in dark mode (off status)
+            : "#f4f3f4" // Light gray in light mode (off status)
+        }
+      />
+    </View>
+  </Card>
+);
+
 // Main Dashboard Component
 const Dashboard = ({ navigation }) => {
   // State Management
@@ -81,6 +107,8 @@ const Dashboard = ({ navigation }) => {
   const [sensorDataBuffer, setSensorDataBuffer] = useState([]);
   const [predictedDays, setPredictedDays] = useState(null);
   const [elapsedDays, setElapsedDays] = useState(0);
+  const [isWaterControlEnabled, setIsWaterControlEnabled] = useState(false);
+  const [isAirControlEnabled, setIsAirControlEnabled] = useState(false);
   
   const cardAnimations = useRef([
     new Animated.Value(0),
@@ -218,7 +246,6 @@ const Dashboard = ({ navigation }) => {
       fontSize: 14,
       color: isDarkMode ? "#A0A0A0" : "gray",
       textAlign: "center",
-      marginBottom: 16,
     },
     sectionTitle: {
       fontSize: 22,
@@ -249,7 +276,7 @@ const Dashboard = ({ navigation }) => {
       flexDirection: 'row',
       flexWrap: 'wrap',
       justifyContent: 'space-between',
-      marginTop: 30,
+      marginTop: 5,
     },
     card: {
       backgroundColor: isDarkMode ? '#1a1a1a' : '#f2f2f2',
@@ -261,7 +288,7 @@ const Dashboard = ({ navigation }) => {
       shadowOpacity: 0.1,
       shadowRadius: 6,
       elevation: 4,
-      marginTop: 20,
+      marginTop: 8,
     },
     statCard: {
       width: "100%",
@@ -397,6 +424,70 @@ const Dashboard = ({ navigation }) => {
               </Animated.View>
             );
           })}
+        </View>
+
+        {/* Water and Air Control Cards */}
+        <View style={styles.cardContainer}>
+          <Animated.View
+            style={{
+              width: "48%",
+              opacity: cardAnimations[3],
+              transform: [
+                {
+                  translateY: cardAnimations[3].interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [50, 0],
+                  }),
+                },
+                {
+                  scale: cardAnimations[3].interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.8, 1],
+                  }),
+                },
+              ],
+            }}
+          >
+            <SwitchCard
+              label="Water Control"
+              value={isWaterControlEnabled}
+              onValueChange={setIsWaterControlEnabled}
+              color={isDarkMode ? cardColors.dark.reservoir : cardColors.light.reservoir}
+              textColor={isDarkMode ? '#4CAF50' : '#1B5E20'}
+              isDarkMode={isDarkMode}
+              styles={styles}
+            />
+          </Animated.View>
+          <Animated.View
+            style={{
+              width: "48%",
+              opacity: cardAnimations[3],
+              transform: [
+                {
+                  translateY: cardAnimations[3].interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [50, 0],
+                  }),
+                },
+                {
+                  scale: cardAnimations[3].interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.8, 1],
+                  }),
+                },
+              ],
+            }}
+          >
+            <SwitchCard
+              label="Air Control"
+              value={isAirControlEnabled}
+              onValueChange={setIsAirControlEnabled}
+              color={isDarkMode ? cardColors.dark.methane : cardColors.light.methane}
+              textColor={isDarkMode ? '#CE93D8' : '#7B1FA2'}
+              isDarkMode={isDarkMode}
+              styles={styles}
+            />
+          </Animated.View>
         </View>
       </Animated.ScrollView>
       <BottomNav navigation={navigation} />

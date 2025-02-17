@@ -1,136 +1,501 @@
-import React, { useState, useRef, useMemo, useContext } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Animated } from 'react-native';
-import Icon from 'react-native-vector-icons/MaterialIcons';
-import { useFocusEffect } from '@react-navigation/native';
-import { ThemeContext } from '../context/ThemeContext'; // Updated import path
+// Imports
+import React, { useState, useEffect, useRef, useContext } from "react";
+import { View, Text, ScrollView, StyleSheet, Animated, Switch } from "react-native";
+import { Card } from "react-native-paper";
+import { MaterialCommunityIcons } from "react-native-vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import Svg, { Circle } from "react-native-svg";
+import BottomNav from "../components/BottomNav";
+import TopNav from "../components/TopNav";
+import { ThemeContext } from "../context/ThemeContext";
+import axios from "axios";
+import { BASE_URL } from "../context/requiredIP";
 
-const BottomNav = ({ navigation }) => {
-    const animatedValue = useRef(new Animated.Value(1)).current;
-    const { isDarkMode } = useContext(ThemeContext); // Now using the correct ThemeContext
+// Constants
+const CIRCLE_RADIUS = 45;
+const CIRCLE_CIRCUMFERENCE = 2 * Math.PI * CIRCLE_RADIUS;
 
-    // Reversed order: Statistics on the left, Home on the right
-    const navItems = useMemo(() => [
-        { name: 'Dashboard', icon: 'home' },
-        { name: 'Statistics', icon: 'bar-chart' },
-        { name: 'History', icon: 'history' },
-    ], []);
-
-    const [selectedNavItem, setSelectedNavItem] = useState(navItems[0].name);
-
-    useFocusEffect(
-        React.useCallback(() => {
-            const currentRoute = navigation.getState().routes[navigation.getState().index]?.name;
-            setSelectedNavItem(currentRoute);
-        }, [navigation])
-    );
-
-    const handleNavItemPress = (name) => {
-        if (selectedNavItem === name) return;
-        setSelectedNavItem(name);
-
-        Animated.sequence([
-            Animated.timing(animatedValue, {
-                toValue: 0.9,
-                duration: 50,
-                useNativeDriver: true,
-            }),
-            Animated.timing(animatedValue, {
-                toValue: 1,
-                duration: 50,
-                useNativeDriver: true,
-            }),
-        ]).start();
-
-        navigation.navigate(name);
-    };
-
-    const styles = StyleSheet.create({
-        navWrapper: {
-            position: 'absolute',
-            bottom: 1,
-            left: 0,
-            right: 0,
-            height: 60,
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: isDarkMode ? 'rgba(40, 40, 40, 0.9)' : 'rgba(255, 255, 255, 0.9)',
-            borderRadius: 12,
-            shadowColor: '#000',
-            shadowOpacity: 0.2,
-            shadowRadius: 8,
-            shadowOffset: { width: 0, height: 4 },
-            elevation: 5,
-        },
-        bottomNav: {
-            flexDirection: 'row',
-            justifyContent: 'space-around',
-            alignItems: 'center',
-            width: '100%',
-            height: '100%',
-            backgroundColor: isDarkMode ? '#2C2C2C' : '#ffffff',
-            borderRadius: 10,
-            borderTopWidth: 0.8,
-            borderLeftWidth: 0.8,
-            borderRightWidth: 0.8,
-            borderColor: isDarkMode ? '#444' : '#d1d1d1',
-            shadowColor: '#000',
-            shadowOpacity: 0.2,
-            shadowRadius: 8,
-            shadowOffset: { width: 0, height: 4 },
-            elevation: 5,
-        },
-        navItem: {
-            alignItems: 'center',
-            paddingHorizontal: 15,
-            paddingVertical: 5,
-        },
-        selectedNavItem: {
-            backgroundColor: isDarkMode ? '#444' : '#E5E5E9',
-            borderRadius: 12,
-            paddingHorizontal: 18,
-            paddingVertical: 5,
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.2,
-            shadowRadius: 4,
-            elevation: 10,
-        },
-        navIcon: {
-            marginBottom: 2,
-        },
-        navText: {
-            fontSize: 11,
-            fontWeight: '500',
-            color: isDarkMode ? '#FFFFFF' : '#333333',
-        },
-    });
-
-    return (
-        <View style={styles.navWrapper}>
-            <View style={styles.bottomNav}>
-                {navItems.map((item) => (
-                    <TouchableOpacity
-                        key={item.name}
-                        style={[styles.navItem, selectedNavItem === item.name && styles.selectedNavItem]}
-                        onPress={() => handleNavItemPress(item.name)}
-                        activeOpacity={0.7}
-                    >
-                        <Animated.View style={{ transform: [{ scale: selectedNavItem === item.name ? animatedValue : 1 }] }}>
-                            <Icon
-                                name={item.icon}
-                                size={26}
-                                color={selectedNavItem === item.name ? (isDarkMode ? '#FFFFFF' : '#333333') : (isDarkMode ? '#8F8F8F' : '#8F8F8F')}
-                                style={styles.navIcon}
-                            />
-                        </Animated.View>
-                        <Text style={[styles.navText, { color: selectedNavItem === item.name ? (isDarkMode ? '#FFFFFF' : '#333333') : (isDarkMode ? '#8F8F8F' : '#8F8F8F') }]}>
-                            {item.name}
-                        </Text>
-                    </TouchableOpacity>
-                ))}
-            </View>
-        </View>
-    );
+// Theme Configuration
+const cardColors = {
+  light: {
+    temperature: '#FFF3E0',
+    moisture: '#E1F5FE',
+    methane: '#F3E5F5',
+    reservoir: '#E8F5E9'
+  },
+  dark: {
+    temperature: '#2D1E12',
+    moisture: '#0D2B3A',
+    methane: '#2A1B2D',
+    reservoir: '#1A2E1C'
+  }
 };
 
-export default BottomNav;
+// Card Configuration
+const getCardConfig = (type, dashboardData, isDarkMode) => {
+  const configs = {
+    temperature: {
+      icon: "thermometer",
+      label: "Temperature",
+      value: dashboardData.temperature,
+      color: isDarkMode ? cardColors.dark.temperature : cardColors.light.temperature,
+      textColor: isDarkMode ? '#FFB74D' : '#E65100'
+    },
+    moisture: {
+      icon: "water-percent",
+      label: "Moisture",
+      value: dashboardData.humidity,
+      color: isDarkMode ? cardColors.dark.moisture : cardColors.light.moisture,
+      textColor: isDarkMode ? '#4FC3F7' : '#0277BD'
+    },
+    methane: {
+      icon: "cloud",
+      label: "Methane",
+      value: dashboardData.ch4_ppm,
+      color: isDarkMode ? cardColors.dark.methane : cardColors.light.methane,
+      textColor: isDarkMode ? '#CE93D8' : '#7B1FA2'
+    }
+  };
+  return configs[type];
+};
+
+// StatCard Component
+const StatCard = ({ icon, label, value, color, textColor, isDarkMode, styles }) => (
+  <Card style={[styles.statCard, { backgroundColor: color }]}>
+    <View style={styles.statRow}>
+      <MaterialCommunityIcons name={icon} size={24} color={textColor} />
+      <Text style={[styles.statLabel, { color: textColor }]}>{label}</Text>
+    </View>
+    <Text style={[styles.statValue, { color: textColor }]}>{value}</Text>
+  </Card>
+);
+
+// SwitchCard Component
+const SwitchCard = ({ label, value, onValueChange, color, textColor, isDarkMode, styles }) => (
+  <Card style={[styles.statCard, { backgroundColor: color }]}>
+    <View style={styles.statRow}>
+      <Text style={[styles.statLabel, { color: textColor }]}>{label}</Text>
+      <Switch
+        value={value}
+        onValueChange={onValueChange}
+        trackColor={{
+          false: isDarkMode ? "#767577" : "#b3b3b3", // Slightly darker gray in light mode (off status)
+          true: isDarkMode ? "#81b0ff" : "#4CAF50", // On status remains the same
+        }}
+        thumbColor={
+          value
+            ? isDarkMode
+              ? "#f5dd4b" // Yellow in dark mode (on status)
+              : "#f4f3f4" // Light gray in light mode (on status)
+            : isDarkMode
+            ? "#f4f3f4" // Light gray in dark mode (off status)
+            : "#f4f3f4" // Light gray in light mode (off status)
+        }
+      />
+    </View>
+  </Card>
+);
+
+// Main Dashboard Component
+const Dashboard = ({ navigation }) => {
+  // State Management
+  const [fadeAnim] = useState(new Animated.Value(0));
+  const [slideAnim] = useState(new Animated.Value(-50));
+  const progressAnim = useRef(new Animated.Value(0)).current;
+  const { isDarkMode } = useContext(ThemeContext);
+  const [dashboardData, setDashboardData] = useState({});
+  const [sensorDataBuffer, setSensorDataBuffer] = useState([]);
+  const [predictedDays, setPredictedDays] = useState(10); // Dummy total days
+  const [elapsedDays, setElapsedDays] = useState(10); // Dummy elapsed days (50% progress)
+  const [isWaterControlEnabled, setIsWaterControlEnabled] = useState(false);
+  const [isAirControlEnabled, setIsAirControlEnabled] = useState(false);
+  
+  const cardAnimations = useRef([
+    new Animated.Value(0),
+    new Animated.Value(0),
+    new Animated.Value(0),
+    new Animated.Value(0),
+  ]).current;
+
+  // Helper Functions
+  const getProgressPercentage = () => {
+    if (!predictedDays) return 0;
+    const percentage = (elapsedDays / predictedDays) * 100;
+    return Math.min(percentage, 100); // Ensures it doesn't exceed 100%
+  };
+
+  const getRemainingDays = () => {
+    if (!predictedDays) return 0;
+    const remaining = predictedDays - elapsedDays;
+    return Math.max(remaining, 0); // Ensures it doesn't go below 0
+  };
+
+  // WebSocket Connection
+  useEffect(() => {
+    let ws = null;
+
+    const connectWebSocket = async () => {
+      try {
+        const token = await AsyncStorage.getItem("userToken");
+        const response = await axios.get(`${BASE_URL}/api/v1/users/getCurrentUser`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+
+        const userId = response.data.data.user._id;
+        const wsUrl = BASE_URL.replace("http", "ws");
+        ws = new WebSocket(`${wsUrl}/ws?userid=${userId}`);
+
+        ws.onmessage = (event) => {
+          const data = JSON.parse(event.data);
+          setSensorDataBuffer(prevBuffer => [...prevBuffer, data].slice(-5));
+          setDashboardData(prevData => ({
+            ...prevData,
+            temperature: data.temperature ? `${data.temperature}°C` : prevData.temperature,
+            humidity: data.humidity ? `${data.humidity}%` : prevData.humidity,
+            ch4_ppm: data.ch4_ppm ? `${data.ch4_ppm} ppm` : prevData.ch4_ppm,
+          }));
+        };
+      } catch (error) {
+        console.error("WebSocket Error:", error);
+      }
+    };
+
+    connectWebSocket();
+    return () => ws?.close();
+  }, []);
+
+  // Comment out the prediction API integration
+  /*
+  useEffect(() => {
+    const fetchPrediction = async () => {
+      if (sensorDataBuffer.length === 5) {
+        const latestData = sensorDataBuffer[4];
+        try {
+          const response = await axios.post("http://172.16.0.174:5000/predict", {
+            "Temperature (°C)": latestData.temperature,
+            "Humidity (%)": latestData.humidity,
+          });
+          setPredictedDays(response.data.predicted_days);
+          
+          const storedElapsedDays = await AsyncStorage.getItem('compostElapsedDays');
+          setElapsedDays(storedElapsedDays ? parseFloat(storedElapsedDays) : 0);
+        } catch (error) {
+          console.error("Prediction API Error:", error);
+        }
+      }
+    };
+
+    fetchPrediction();
+  }, [sensorDataBuffer]);
+  */
+
+  // Animation Effects
+  useEffect(() => {
+    const progressPercentage = getProgressPercentage();
+    
+    const animations = [
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 500,
+        useNativeDriver: true,
+      }),
+      Animated.timing(progressAnim, {
+        toValue: progressPercentage / 100,
+        duration: 1000,
+        useNativeDriver: true,
+      })
+    ];
+
+    Animated.parallel(animations).start();
+
+    cardAnimations.forEach((anim, index) => {
+      Animated.sequence([
+        Animated.delay(index * 200),
+        Animated.spring(anim, {
+          toValue: 1,
+          friction: 4,
+          tension: 50,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    });
+  }, [fadeAnim, slideAnim, progressAnim, cardAnimations]);
+
+  // Styles
+  const styles = StyleSheet.create({
+    container: {
+      flex: 1,
+      backgroundColor: isDarkMode ? "#121212" : "rgba(247, 255, 244, 0.95)",
+    },
+    scrollContainer: {
+      paddingHorizontal: 20,
+      paddingVertical: 24,
+      paddingBottom: 10,
+    },
+    title: {
+      fontSize: 26,
+      fontWeight: "bold",
+      textAlign: "center",
+      marginBottom: 6,
+      color: isDarkMode ? "#FFFFFF" : "#000000",
+    },
+    subText: {
+      fontSize: 14,
+      color: isDarkMode ? "#A0A0A0" : "gray",
+      textAlign: "center",
+      // marginBottom: 0,
+    },
+    sectionTitle: {
+      fontSize: 22,
+      fontWeight: "600",
+      textAlign: "center",
+      marginBottom: 12,
+      color: isDarkMode ? "#FFFFFF" : "darkgreen",
+    },
+    progressContainer: {
+      alignItems: "center",
+      justifyContent: "center",
+      marginVertical: 16,
+      position: "relative",
+    },
+    progressText: {
+      fontSize: 36,
+      fontWeight: "bold",
+      position: "absolute",
+      color: isDarkMode ? "#FFFFFF" : "#000000",
+    },
+    progressSubText: {
+      fontSize: 14,
+      position: "absolute",
+      bottom: -30,
+      color: isDarkMode ? "#A0A0A0" : "gray",
+    },
+    cardContainer: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      justifyContent: 'space-between',
+      marginTop: 5,
+    },
+    card: {
+      backgroundColor: isDarkMode ? '#1a1a1a' : '#f2f2f2',
+      borderRadius: 10,
+      padding: 20,
+      marginBottom: 20,
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.1,
+      shadowRadius: 6,
+      elevation: 4,
+      marginTop: 8,
+    },
+    statCard: {
+      width: "100%",
+      padding: 14,
+      marginBottom: 12,
+      borderRadius: 10,
+      elevation: 3,
+      borderWidth: isDarkMode ? 1 : 0,
+      borderColor: isDarkMode ? 'rgba(255, 255, 255, 0.1)' : 'transparent',
+    },
+    statRow: {
+      flexDirection: "row",
+      alignItems: "center",
+    },
+    statLabel: {
+      fontSize: 16,
+      fontWeight: "600",
+      marginLeft: 8,
+    },
+    statValue: {
+      fontSize: 20,
+      fontWeight: "bold",
+      marginTop: 6,
+    },
+    switchContainer: {
+      flexDirection: "row",
+      justifyContent: "space-between",
+      alignItems: "center",
+      padding: 16,
+      marginBottom: 50
+    },
+    switchLabel: {
+      fontSize: 16,
+      fontWeight: "600",
+      color: isDarkMode ? "#FFFFFF" : "#000000",
+    },
+  });
+
+  // Animated Circle Component
+  const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+  const progressPercentage = getProgressPercentage();
+
+  // Render
+  return (
+    <View style={styles.container}>
+      <TopNav navigation={navigation} />
+      <Animated.ScrollView
+        contentContainerStyle={styles.scrollContainer}
+        style={{
+          opacity: fadeAnim,
+          transform: [{ translateY: slideAnim }],
+        }}
+      >
+        {/* Compost Readiness Card */}
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>Compost Readiness</Text>
+          <Text style={styles.subText}>
+            {predictedDays 
+              ? `${getRemainingDays().toFixed(1)} days remaining`
+              : "Getting stable data..."}
+          </Text>
+
+          <View style={styles.progressContainer}>
+            <Svg width="140" height="140" viewBox="0 0 100 100">
+              <Circle
+                cx="50"
+                cy="50"
+                r={CIRCLE_RADIUS}
+                stroke={isDarkMode ? "#333333" : "lightgray"}
+                strokeWidth="5"
+                fill="none"
+              />
+              <AnimatedCircle
+                cx="50"
+                cy="50"
+                r={CIRCLE_RADIUS}
+                stroke={isDarkMode ? "#4CAF50" : "green"}
+                strokeWidth="10"
+                fill="none"
+                strokeDasharray={`${CIRCLE_CIRCUMFERENCE} ${CIRCLE_CIRCUMFERENCE}`}
+                strokeDashoffset={progressAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [CIRCLE_CIRCUMFERENCE, 0],
+                })}
+                strokeLinecap="round"
+                transform="rotate(-90 50 50)"
+              />
+            </Svg>
+            <Text style={styles.progressText}>
+              {Math.round(progressPercentage)}%
+            </Text>
+            <Text style={styles.progressSubText}>
+              Day {elapsedDays.toFixed(0)} of {predictedDays ? predictedDays.toFixed(0) : '--'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Stat Cards */}
+        <View style={styles.cardContainer}>
+          {['temperature', 'moisture', 'methane'].map((type, index) => {
+            const config = getCardConfig(type, dashboardData, isDarkMode);
+            return (
+              <Animated.View
+                key={index}
+                style={{
+                  width: "48%",
+                  opacity: cardAnimations[index],
+                  transform: [
+                    {
+                      translateY: cardAnimations[index].interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [50, 0],
+                      }),
+                    },
+                    {
+                      scale: cardAnimations[index].interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0.8, 1],
+                      }),
+                    },
+                  ],
+                }}
+              >
+                <StatCard
+                  icon={config.icon}
+                  label={config.label}
+                  value={config.value}
+                  color={config.color}
+                  textColor={config.textColor}
+                  isDarkMode={isDarkMode}
+                  styles={styles}
+                />
+              </Animated.View>
+            );
+          })}
+        </View>
+
+        {/* Water and Air Control Cards */}
+        <View style={styles.cardContainer}>
+          <Animated.View
+            style={{
+              width: "48%",
+              opacity: cardAnimations[3],
+              transform: [
+                {
+                  translateY: cardAnimations[3].interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [50, 0],
+                  }),
+                },
+                {
+                  scale: cardAnimations[3].interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.8, 1],
+                  }),
+                },
+              ],
+            }}
+          >
+            <SwitchCard
+              label="Water Control"
+              value={isWaterControlEnabled}
+              onValueChange={setIsWaterControlEnabled}
+              color={isDarkMode ? cardColors.dark.reservoir : cardColors.light.reservoir}
+              textColor={isDarkMode ? '#4CAF50' : '#1B5E20'}
+              isDarkMode={isDarkMode}
+              styles={styles}
+            />
+          </Animated.View>
+          <Animated.View
+            style={{
+              width: "48%",
+              opacity: cardAnimations[3],
+              transform: [
+                {
+                  translateY: cardAnimations[3].interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [50, 0],
+                  }),
+                },
+                {
+                  scale: cardAnimations[3].interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.8, 1],
+                  }),
+                },
+              ],
+            }}
+          >
+            <SwitchCard
+              label="Air Control"
+              value={isAirControlEnabled}
+              onValueChange={setIsAirControlEnabled}
+              color={isDarkMode ? cardColors.dark.methane : cardColors.light.methane}
+              textColor={isDarkMode ? '#CE93D8' : '#7B1FA2'}
+              isDarkMode={isDarkMode}
+              styles={styles}
+            />
+          </Animated.View>
+        </View>
+      </Animated.ScrollView>
+      <BottomNav navigation={navigation} />
+    </View>
+  );
+};
+
+export default Dashboard;
